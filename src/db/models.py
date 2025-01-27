@@ -1,7 +1,7 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, URL
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy_utils import create_database
+from sqlalchemy_utils import create_database, database_exists
 
 Base = declarative_base()
 
@@ -24,8 +24,19 @@ print(f"Connecting to database: {DATABASE_URI}")
 
 try:
     engine = create_engine(DATABASE_URI)
-    create_database(engine.url)
+
+    # Проверяем, существует ли база данных
+    if not database_exists(engine.url):
+        print("Database does not exist. Creating a new one...")
+        create_database(engine.url)
+        print("Database created successfully!")
+    else:
+        print("Database already exists. Connecting to it...")
+
+    # Создаем таблицы, если они не существуют
     Base.metadata.create_all(engine)
+
+    # Создаем сессию
     Session = sessionmaker(bind=engine)
     session = Session()
     print("Connection successful!")

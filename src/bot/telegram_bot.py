@@ -45,14 +45,14 @@ class TelegramBot:
             elif call.data.startswith('sub_'):
                 self.user_data_handler.add_user(chat_id)
                 self.user_data_handler.update_user_data(chat_id, "subscription", call.data)
-                self.bot.send_message(chat_id, "Введите ваш логин:")
+                self.bot.send_message(chat_id, "Введите ваш логин  от Spotify:")
                 self.user_data_handler.update_user_step(chat_id, "login")
 
             elif call.data == 'help':
                 self.bot.send_message(chat_id, "Здесь будет информация о помощи.")
 
             elif call.data == 'support':
-                self.bot.send_message(chat_id, "Свяжитесь с поддержкой: @ваш_аккаунт")
+                self.bot.send_message(chat_id, "Свяжитесь с поддержкой: @igornevertired")
 
             elif call.data == 'reviews':
                 self.show_reviews(chat_id)
@@ -101,7 +101,7 @@ class TelegramBot:
                 if step == "login":
                     self.user_data_handler.update_user_data(chat_id, "login", message.text)
                     self.user_data_handler.update_user_step(chat_id, "password")
-                    self.bot.send_message(chat_id, "Введите ваш пароль:")
+                    self.bot.send_message(chat_id, "Введите ваш пароль от Spotify:")
 
                 elif step == "password":
                     self.user_data_handler.update_user_data(chat_id, "password", message.text)
@@ -141,7 +141,9 @@ class TelegramBot:
         btn_sub_12 = types.InlineKeyboardButton("Spotify Premium 12 мес - 3490 руб", callback_data='sub_12')
         markup.add(btn_sub_3, btn_sub_6, btn_sub_12)
 
-        self.bot.send_message(chat_id, "Выберите подписку:", reply_markup=markup)
+        # Открываем изображение и отправляем его с кнопками
+        with open("src/img/tariff.jpg", "rb") as photo:
+            self.bot.send_photo(chat_id, photo=photo, caption="Выберите подписку:", reply_markup=markup)
 
     def show_reviews(self, chat_id):
         reviews_text = "⭐️⭐️⭐️⭐️⭐️\nОтличный сервис! Быстро и качественно.\n\n"
