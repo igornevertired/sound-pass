@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta
+import os
+from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, InputMediaPhoto
 from aiogram.filters import Command
@@ -7,6 +8,9 @@ from aiogram.filters.callback_data import CallbackData
 from src.handlers.user_data_handler import UserDataHandler
 from src.db.db_manager import SubscriptionModel, get_db
 import yaml
+from aiogram import F
+
+SCREENSHOT_DIR = "screenshots"
 
 
 def load_messages(file_path: str = "src/configs/messages.yaml") -> dict:
@@ -21,6 +25,7 @@ class SubscriptionCallback(CallbackData, prefix="sub"):
 class TelegramBot:
     PRICES = {'sub_3': 1090, 'sub_6': 2390, 'sub_12': 3490}
     DURATIONS = {'sub_3': 90, 'sub_6': 180, 'sub_12': 365}
+    PAYMENT_DETAILS = {"card": "1234 5678 9012 3456", "sbp": "+7 999 123 45 67"}  # Данные для оплаты
 
     def __init__(self, token):
         self.bot = Bot(token)
@@ -33,7 +38,7 @@ class TelegramBot:
         return self.PRICES.get(tariff, 0)
 
     def calculate_next_pay_time(self, tariff):
-        return datetime.now() + timedelta(days=self.DURATIONS.get(tariff, 0))
+        return datetime.now(timezone.utc) + timedelta(days=self.DURATIONS.get(tariff, 0))
 
     def setup_handlers(self):
         @self.dp.message(Command("start"))
@@ -53,16 +58,41 @@ class TelegramBot:
                 self.user_data_handler.update_user_data(chat_id, "subscription", data)
                 self.user_data_handler.update_user_step(chat_id, "login")
                 await self.bot.send_message(chat_id, self.messages["login"])
-            elif data == 'help':
-                await self.bot.send_message(chat_id, "Здесь будет информация о помощи.")
             elif data == 'back':
                 await self.show_main_menu(chat_id=call.message.chat.id, message_id=call.message.message_id)
-            elif data in ['card', 'crypto']:
+            elif data in ['card', 'sbp']:
                 await self.process_payment(chat_id, data)
             elif data == 'paid':
-                await self.bot.send_message(
-                    chat_id, self.messages["processing_payment_message"]
-                )
+                await self.confirm_payment(chat_id)
+
+        @self.dp.message(F.content_type == types.ContentType.PHOTO)
+        async def handle_screenshot(message: types.Message, bot: Bot):
+            chat_id = message.chat.id
+            user_data = self.user_data_handler.get_user_data(chat_id)
+
+            if not user_data or user_data.get("step") != "waiting_screenshot":
+                return
+
+            login = user_data.get("login", "unknown")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            screenshot_dir = "screenshots"  # Папка для сохранения
+            os.makedirs(screenshot_dir, exist_ok=True)  # Создаем папку, если её нет
+            filename = f"{screenshot_dir}/{login}_{timestamp}.jpg"
+
+            photo = message.photo[-1]  # Берем самое большое фото
+            file = await bot.get_file(photo.file_id)  # Получаем объект файла
+            await bot.download_file(file.file_path, filename)  # Скачиваем файл
+
+            self.user_data_handler.update_user_data(chat_id, "screenshot", filename)
+            self.user_data_handler.update_user_step(chat_id, "waiting_payment_confirmation")
+
+            markup = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Оплатил ✅", callback_data="paid")]]
+            )
+
+            await bot.send_message(
+                chat_id, "Скриншот получен. Теперь нажмите кнопку 'Оплатил ✅'.", reply_markup=markup
+            )
 
         @self.dp.message()
         async def handle_text(message: types.Message):
@@ -72,6 +102,8 @@ class TelegramBot:
                 return
 
             step = user_data.get("step")
+            username = message.from_user.username or "unknown"
+            self.user_data_handler.update_user_data(chat_id, "telegram_username", username)
             await self.process_step(chat_id, step, message.text, None)
 
     async def process_step(self, chat_id, step, text, call: types.CallbackQuery = None):
@@ -93,23 +125,44 @@ class TelegramBot:
             return
 
         self.user_data_handler.update_user_data(chat_id, "payment_method", method)
-        subscription = user_data.get("subscription")
+        self.user_data_handler.update_user_step(chat_id, "waiting_screenshot")
+        payment_info = self.PAYMENT_DETAILS[method]
+
+        await self.bot.send_message(
+            chat_id, f"Отправьте оплату на: {payment_info}. У вас есть 15 минут. Затем отправьте скриншот оплаты."
+        )
+
+    async def confirm_payment(self, chat_id):
+        user_data = self.user_data_handler.get_user_data(chat_id)
+        if not user_data or user_data.get("step") != "waiting_payment_confirmation":
+            await self.bot.send_message(chat_id, "Сначала отправьте скриншот оплаты!")
+            return
+
         login = user_data.get("login")
         password = user_data.get("password")
+        subscription = user_data.get("subscription")
+        payment_method = user_data.get("payment_method")
+        screenshot = user_data.get("screenshot")
+        telegram_username = user_data.get("telegram_username", "unknown")
+
+        created_time = datetime.now(timezone.utc).replace(tzinfo=None)
+        next_pay_time = self.calculate_next_pay_time(subscription).replace(tzinfo=None)
 
         async for session in get_db():
             await SubscriptionModel.create_subscription(
                 session=session,
                 name=login,
                 password=password,
+                telegram_username=telegram_username,
                 tariff=subscription,
-                payment_method=method,
+                payment_method=payment_method,
                 price=self.get_price(subscription),
-                created_time=datetime.now(),
-                next_pay_time=self.calculate_next_pay_time(subscription)
+                created_time=created_time,
+                next_pay_time=next_pay_time,
+                screenshot=screenshot
             )
 
-        await self.bot.send_message(chat_id, self.messages["thank_you_message"])
+        await self.bot.send_message(chat_id, "Оплата подтверждена! Подписка активирована.")
         self.user_data_handler.delete_user(chat_id)
 
     async def edit_message(self, chat_id, message_id, text=None, photo_path=None, reply_markup=None):
@@ -153,8 +206,8 @@ class TelegramBot:
 
         markup = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="💳 Карта", callback_data='card'),
-                 InlineKeyboardButton(text="🪙 Криптовалюта", callback_data='crypto')],
+                [InlineKeyboardButton(text="💳 Банковская карта", callback_data='card'),
+                 InlineKeyboardButton(text=" СБП", callback_data='sbp')],
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data='back')]
             ]
         )

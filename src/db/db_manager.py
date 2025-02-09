@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.db.models import Base, Subscription
 from src.logger import logger
 import os
+import asyncpg
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,11 +23,30 @@ engine = create_async_engine(DATABASE_URL, echo=True)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
+async def create_database():
+    """Создает базу данных, если она не существует."""
+    conn = await asyncpg.connect(user=DB_USER, password=DB_PASSWORD, host=DB_HOST, port=DB_PORT, database="postgres")
+    db_exists = await conn.fetchval(f"SELECT 1 FROM pg_database WHERE datname = '{DB_NAME}'")
+
+    if not db_exists:
+        await conn.execute(f'CREATE DATABASE "{DB_NAME}" OWNER {DB_USER}')
+        logger.info(f"База данных {DB_NAME} создана.")
+    else:
+        logger.info(f"База данных {DB_NAME} уже существует.")
+
+    await conn.close()
+
+
 async def init_db():
-    """Инициализация базы данных (создание таблиц, если их нет)."""
+    """Инициализация базы данных: создаёт, если нет, и обновляет схему."""
+    await create_database()
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database initialized successfully!")
+        try:
+            await conn.run_sync(Base.metadata.create_all)
+            logger.info("Схема базы данных обновлена.")
+        except SQLAlchemyError as e:
+            logger.error(f"Ошибка при создании таблиц: {e}")
 
 
 async def get_db():
@@ -38,16 +58,18 @@ async def get_db():
 class SubscriptionModel:
     @staticmethod
     async def create_subscription(session: AsyncSession, name, password, tariff, payment_method, price, created_time,
-                                  next_pay_time):
+                                  next_pay_time, screenshot, telegram_username):
         """Создание новой подписки."""
         new_subscription = Subscription(
             name=name,
             password=password,
+            telegram_username=telegram_username,
             tariff=tariff,
             payment_method=payment_method,
             price=price,
             created_time=created_time,
-            next_pay_time=next_pay_time
+            next_pay_time=next_pay_time,
+            screenshot=screenshot
         )
         try:
             session.add(new_subscription)
