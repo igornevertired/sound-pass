@@ -1,31 +1,31 @@
 import logging
-from colorlog import ColoredFormatter
+import coloredlogs
 
+logger = logging.getLogger("okkam")
+logger.setLevel(logging.INFO)
 
-def setup_logging():
-    """
-    Настройка цветного логирования.
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
 
-    """
+formatter = logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(" "message)s")
+console_handler.setFormatter(formatter)
 
-    formatter = ColoredFormatter(
-        "%(log_color)s%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        reset=True,
-        log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'green',
-            'WARNING': 'yellow',
-            'ERROR': 'red',
-            'CRITICAL': 'red,bg_white',
-        },
-        secondary_log_colors={},
-        style='%'
-    )
-
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
+logger.addHandler(console_handler)
+coloredlogs.install(
+    level="INFO",
+    logger=logger,
+    fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    field_styles={
+        "asctime": {"color": "white"},
+        "name": {"color": "white"},
+        "levelname": {"color": "white"},
+        "message": {"color": "white"},
+    },
+    level_styles={
+        "info": {"color": "green"},
+        "warning": {"color": "yellow"},
+        "error": {"color": "red"},
+        "critical": {"color": "red", "bold": True},
+    },
+)

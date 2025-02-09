@@ -16,6 +16,10 @@ sqlalchemy = "^2.0.37"
 psycopg2 = "^2.9.10"
 psycopg2-binary = "^2.9.10"
 sqlalchemy-utils = "^0.41.2"
+coloredlogs = "^15.0.1"
+aiogram = "^3.17.0"
+asyncpg = "^0.30.0"
+python-dotenv = "^1.0.1"
 
 
 [build-system]

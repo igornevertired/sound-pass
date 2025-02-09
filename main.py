@@ -1,19 +1,21 @@
+import asyncio
+import os
+
 import yaml
 from src.bot.telegram_bot import TelegramBot
-from src.logger import setup_logging
+from src.db.db_manager import init_db
 
 
-def load_config(config_path):
-    with open(config_path, "r", encoding="utf-8") as file:
-        return yaml.safe_load(file)
+async def main():
+    TOKEN = os.getenv("API_KEY")
 
+    if not TOKEN:
+        raise ValueError("API_KEY is missing in the config file")
 
-if __name__ == '__main__':
-    setup_logging()
-
-    CONFIG_PATH = "./src/configs/config.yaml"
-    config = load_config(CONFIG_PATH)
-    TOKEN = config['API_KEY']
-
+    await init_db()
     bot = TelegramBot(TOKEN)
-    bot.run()
+    await bot.run()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
